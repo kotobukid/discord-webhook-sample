@@ -14,3 +14,7 @@ axum = "0.8.3"
 serde = { version = "1.0.219", features = ["derive"] }
 tower = "0.5.1"
 tower-http = { version = "0.6.2", features = ["cors", "fs"] }
+rustls-pemfile = "1.0.4"
+tokio-rustls = "0.25.0"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum-extra = "0.10.1"
