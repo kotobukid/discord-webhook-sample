@@ -7,8 +7,7 @@ use std::thread;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // mpscのSenderとReceiverを作成
     let (tx, rx) = mpsc::channel::<String>(32);
 
