@@ -3,7 +3,6 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, Timelike};
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use serenity::async_trait;
@@ -12,8 +11,7 @@ use serenity::model::gateway::Ready;
 use serenity::model::id::ChannelId;
 use serenity::prelude::*;
 use std::num::ParseIntError;
-// use std::sync::mpsc;
-// use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
@@ -31,7 +29,7 @@ pub fn get_channel() -> Result<u64, ParseIntError> {
 }
 
 struct Handler {
-    receiver: Receiver<String>,
+    receiver: Arc<Mutex<Receiver<String>>>,
 }
 
 #[async_trait]
@@ -63,55 +61,62 @@ impl EventHandler for Handler {
         let id: u64 = get_channel().unwrap();
         let channel_id: ChannelId = ChannelId::from(id);
 
-        tokio::spawn(async move {
-            loop {
-                let now: DateTime<Local> = Local::now();
-                let mut date: NaiveDate = now.date_naive();
-
-                let target_hour: u32 = 0;
-                let target_min: u32 = 5;
-
-                if now.time().hour() > target_hour
-                    || (now.time().hour() == target_hour && now.time().minute() >= target_min)
-                {
-                    // If it is past 00:05, set date to tomorrow. 地球が存在する限り失敗しない
-                    date = date.succ_opt().expect("failed to get next date");
-                }
-
-                // このハードコーディングであれば失敗しない
-                let tomorrow_at_0005: NaiveDateTime = date
-                    .and_hms_opt(target_hour, target_min, 0)
-                    .expect("failed to get time");
-                // println!("{}", tomorrow_at_0005.format("%F %R"));
-
-                let duration_to_wait = tomorrow_at_0005.signed_duration_since(now.naive_local());
-
-                println!(
-                    "next action at after {} min",
-                    duration_to_wait.num_minutes()
-                );
-
-                tokio::time::sleep(duration_to_wait.to_std().unwrap()).await;
-
-                let strings: Result<String, String> = Ok("test".to_string());
-
-                match strings {
-                    Ok(s) => {
-                        let res = channel_id
-                            .say(&context.http, follow_cutting_string(s))
-                            .await;
-                        match res {
-                            Ok(_) => (),
-                            Err(e) => eprintln!("{:?}", e),
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("get_nearest_events() failed.");
-                        eprintln!("{:?}", e)
-                    }
-                }
+        while let Some(message) = self.receiver.lock().await.recv().await {
+            // チャンネルにメッセージを送信
+            if let Err(e) = channel_id.say(&context.http, &message).await {
+                eprintln!("メッセージ送信中にエラーが発生しました: {:?}", e);
             }
-        });
+        }
+
+        // tokio::spawn(async move {
+        //     loop {
+        //         let now: DateTime<Local> = Local::now();
+        //         let mut date: NaiveDate = now.date_naive();
+        //
+        //         let target_hour: u32 = 0;
+        //         let target_min: u32 = 5;
+        //
+        //         if now.time().hour() > target_hour
+        //             || (now.time().hour() == target_hour && now.time().minute() >= target_min)
+        //         {
+        //             // If it is past 00:05, set date to tomorrow. 地球が存在する限り失敗しない
+        //             date = date.succ_opt().expect("failed to get next date");
+        //         }
+        //
+        //         // このハードコーディングであれば失敗しない
+        //         let tomorrow_at_0005: NaiveDateTime = date
+        //             .and_hms_opt(target_hour, target_min, 0)
+        //             .expect("failed to get time");
+        //         // println!("{}", tomorrow_at_0005.format("%F %R"));
+        //
+        //         let duration_to_wait = tomorrow_at_0005.signed_duration_since(now.naive_local());
+        //
+        //         println!(
+        //             "next action at after {} min",
+        //             duration_to_wait.num_minutes()
+        //         );
+        //
+        //         tokio::time::sleep(duration_to_wait.to_std().unwrap()).await;
+        //
+        //         let strings: Result<String, String> = Ok("test".to_string());
+        //
+        //         match strings {
+        //             Ok(s) => {
+        //                 let res = channel_id
+        //                     .say(&context.http, follow_cutting_string(s))
+        //                     .await;
+        //                 match res {
+        //                     Ok(_) => (),
+        //                     Err(e) => eprintln!("{:?}", e),
+        //                 }
+        //             }
+        //             Err(e) => {
+        //                 eprintln!("get_nearest_events() failed.");
+        //                 eprintln!("{:?}", e)
+        //             }
+        //         }
+        //     }
+        // });
     }
 }
 
@@ -165,6 +170,8 @@ async fn run_discord_bot(rx: Receiver<String>) {
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT;
 
+    let rx = Arc::new(Mutex::new(rx));
+
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler { receiver: rx })
         .await
@@ -184,7 +191,7 @@ async fn webhook_handler(
     State(sender): State<Sender<String>>,
     Json(payload): Json<HookMessage>,
 ) -> impl IntoResponse {
-    println!("webhook_handler: {:?}", payload);
+    // println!("webhook_handler: {:?}", payload);
     let sender = sender.clone();
 
     if let Err(e) = sender.send(payload.message.clone()).await {
