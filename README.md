@@ -19,8 +19,8 @@
 1. リポジトリをクローンします：
 
 ```bash
-git clone https://github.com/yourusername/ip_notifier.git
-cd ip_notifier
+git clone https://github.com/kotobukid/discord-webhook-sample
+cd discord-webhook-sample
 ```
 
 2. 環境変数を設定します：
